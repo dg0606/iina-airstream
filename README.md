@@ -13,4 +13,5 @@ Open a URL in IINA → menu **Plugins → AirStream** → *Search devices* → *
 ## Limits
 - Network streams only (no local files).
 - No remote control from IINA; pause/seek on the receiving device.
+- YouTube: AirPlay takes one URL, so only the muxed 360p stream is available (YouTube no longer serves higher resolutions with audio in one file).
 - If the device asks for a PIN, pair it with `atvremote --id <id> --protocol airplay pair`.
