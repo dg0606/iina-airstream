@@ -27,6 +27,10 @@ function sleep(sec) { return utils.exec("/bin/sleep", [String(sec)]); }
 async function sh(cmd, args) {
   try { return await utils.exec(cmd, args); } catch (e) { return { status: -1, stdout: "", stderr: String(e) }; }
 }
+// Hard time limit (seconds) so a hung ffprobe/yt-dlp can never freeze the panel.
+async function lim(sec, cmd, args) {
+  return sh("/usr/bin/perl", ["-e", "alarm shift @ARGV; exec @ARGV", String(sec), cmd].concat(args));
+}
 async function test(flag, p) { return (await sh("/bin/test", [flag, p])).status === 0; }
 async function firstExe(list) { for (var i = 0; i < list.length; i++) if (list[i] && await test("-x", list[i])) return list[i]; return null; }
 async function cat(p) { var r = await sh("/bin/cat", [p]); return r.status === 0 ? r.stdout : ""; }
@@ -67,10 +71,11 @@ function headerString() {
 
 async function probe(T, src, headers) {
   if (!T.ffprobe) return null;
-  var a = ["-v", "error", "-print_format", "json", "-show_format", "-show_streams"];
+  var a = ["-v", "error", "-print_format", "json", "-show_format", "-show_streams",
+           "-probesize", "10000000", "-analyzeduration", "10000000"];
   if (/^https?:/i.test(src)) a.push("-rw_timeout", "15000000");
   if (headers) a.push("-headers", headers + "\r\n");
-  var r = await sh(T.ffprobe, a.concat([src]));
+  var r = await lim(40, T.ffprobe, a.concat([src]));
   if (r.status !== 0) { log.log("ffprobe failed: " + tail(r.stderr)); return null; }
   try {
     var j = JSON.parse(r.stdout), v = null, aud = [];
@@ -81,6 +86,21 @@ async function probe(T, src, headers) {
     return { format: (j.format && j.format.format_name) || "", v: v, audio: aud };
   } catch (e) { return null; }
 }
+
+// What IINA/mpv already learned about the stream it opened — no need to open a
+// heavy (4K debrid) link a second time just to look at it.
+function mpvInfo() {
+  try {
+    var v = mpv.getString("video-format") || "";
+    if (!v) return null;
+    var aud = [], n = mpv.getNumber("track-list/count") || 0;
+    for (var i = 0; i < n; i++) {
+      if (mpv.getString("track-list/" + i + "/type") === "audio") aud.push({ codec_name: mpv.getString("track-list/" + i + "/codec") || "" });
+    }
+    return { format: mpv.getString("file-format") || "", v: { codec_name: v, pix_fmt: mpv.getString("video-params/pixelformat") || "" }, audio: aud, fromMpv: true };
+  } catch (e) { return null; }
+}
+var PAGE_SITE = /(youtube\.com|youtu\.be|vimeo\.com|twitch\.tv|dailymotion\.com|reddit\.com|facebook\.com|tiktok\.com|twitter\.com|x\.com)\//i;
 
 // Can the TV (AVFoundation) play this as is?
 function tvNative(p, headers) {
@@ -102,7 +122,7 @@ async function ytdlpUrl(T, src) {
   var js = T.deno ? ["--js-runtimes", "deno:" + T.deno] : T.node ? ["--js-runtimes", "node:" + T.node] : [];
   var tries = [base.concat(js, yt, [src]), base.concat(yt, [src]), base.concat([src])];
   for (var i = 0; i < tries.length; i++) {
-    var r = await sh(T.ytdlp, tries[i]);
+    var r = await lim(60, T.ytdlp, tries[i]);
     var u = r.status === 0 ? r.stdout.trim().split("\n")[0] : "";
     if (u) return u;
   }
@@ -126,6 +146,7 @@ async function lanIP() {
 function ffmpegArgs(src, p, headers, startAt) {
   var a = ["-hide_banner", "-loglevel", "warning", "-nostdin"];
   if (headers) a.push("-headers", headers + "\r\n");
+  if (/^https?:/i.test(src)) a.push("-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5");
   a.push("-re");
   if (startAt > 1) a.push("-ss", String(startAt));
   a.push("-i", src, "-map", "0:v:0");
@@ -191,9 +212,12 @@ async function prepare() {
     if (!src) return set("idle", "Play something in IINA.");
     set("resolving", "Analyzing stream...");
     var T = await tools(), net = /^https?:\/\//i.test(src), headers = net ? headerString() : "";
-    var p = await probe(T, src, headers);
+    var p = null;
+    if (!(net && PAGE_SITE.test(src))) p = mpvInfo();          // normal streams / local files: IINA already knows
+    if (!p) p = await probe(T, src, headers);                   // not available yet: look at it ourselves (time-limited)
     if (me !== gen) return;
     if (!p && net) { // maybe a web page (YouTube, ...)
+      set("resolving", "Resolving page URL...");
       var u = await ytdlpUrl(T, src);
       if (me !== gen) return;
       if (u) { src = u; headers = ""; p = await probe(T, src, headers); }
@@ -201,7 +225,7 @@ async function prepare() {
     if (me !== gen) return;
     if (!p) {
       if (net && !T.ffprobe) { st.url = src; st.info = "direct (ffprobe not found)"; return set("ready", "Ready (not analyzed). Press AirPlay."); }
-      return set("error", "Could not read this stream" + (T.ffprobe ? "." : " (install ffmpeg: brew install ffmpeg)."));
+      return set("error", "Could not read this stream" + (T.ffprobe ? " (timed out or unsupported). Press Reload." : " (install ffmpeg: brew install ffmpeg)."));
     }
     if (!p.v) return set("error", "No video track found.");
     if (net && tvNative(p, headers)) {
@@ -210,7 +234,7 @@ async function prepare() {
     }
     SERVE = await findPluginFile("serve.py");
     if (!SERVE) throw new Error("serve.py not found in the plugin folder.");
-    set("resolving", "Preparing stream for the TV (remuxing via this Mac)...");
+    set("resolving", "Opening the stream and preparing it for the TV (can take ~30 s for big files)...");
     var startAt = st.pos;
     var res = await startPipeline(T, src, p, headers, startAt, me);
     if (!res || me !== gen) return;
