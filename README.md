@@ -14,4 +14,5 @@ Open a URL in IINA → menu **Plugins → AirStream** → *Search devices* → *
 - Network streams only (no local files).
 - No remote control from IINA; pause/seek on the receiving device.
 - YouTube: AirPlay takes one URL, so only the muxed 360p stream is available (YouTube no longer serves higher resolutions with audio in one file).
-- If the device asks for a PIN, pair it with `atvremote --id <id> --protocol airplay pair`.
+- Pairing: if the TV answers "not authenticated", the plugin starts pairing automatically — type the PIN shown on the TV in the sidebar box. Done once per device (credentials saved in the plugin data folder).
+- Subtitles loaded in IINA are not sent to the TV (it fetches the stream itself).

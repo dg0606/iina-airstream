@@ -19,11 +19,18 @@
   <div id="devs"></div>
   <button id="scan">Search devices</button>
   <button id="stop">Stop casting</button>
+  <div id="pinbox" style="display:none">
+    <input id="pin" inputmode="numeric" maxlength="8" placeholder="PIN from the TV" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--btn);background:var(--btn);color:var(--ink);font:inherit;margin-bottom:6px">
+    <button id="pinok" class="go">Send PIN</button>
+  </div>
   <div id="msg">Waiting for the plugin…</div>
 </div>
 <script>
   const $ = (id) => document.getElementById(id);
   $("scan").onclick = () => iina.postMessage("scan", {});
+  const sendPin = () => { iina.postMessage("pin", { pin: $("pin").value }); $("pin").value = ""; };
+  $("pinok").onclick = sendPin;
+  $("pin").onkeydown = (e) => { if (e.key === "Enter") sendPin(); };
   $("stop").onclick = () => iina.postMessage("stop", {});
   iina.onMessage("state", (s) => {
     $("devs").innerHTML = "";
@@ -33,6 +40,7 @@
       b.onclick = () => iina.postMessage("cast", { id: d.id });
       $("devs").appendChild(b);
     });
+    $("pinbox").style.display = s.status === "pairing" ? "block" : "none";
     $("msg").textContent = s.status === "casting" ? "Casting to " + s.msg : s.msg;
   });
   setInterval(() => iina.postMessage("getState", {}), 1000);

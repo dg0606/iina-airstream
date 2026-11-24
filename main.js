@@ -29,10 +29,13 @@ var ROOT = null, HELPER = null;
 var VENV = DATA + "/venv";
 var PY = VENV + "/bin/python3";
 var PIDFILE = DATA + "/cast.pid";
+var PINFILE = DATA + "/pair.pin";
+var CREDFILE = DATA + "/credentials.json";
+var pairingDev = null;
 var DIRECT = /\.(m3u8|mp4|mkv|webm|mov|mp3|flac|aac|m4a)(\?|$)/i;
 
 var devices = [];
-var status = "idle";   // idle | setup | scanning | resolving | casting | error
+var status = "idle";   // idle | setup | scanning | resolving | casting | pairing | error
 var message = "";
 var sidebarReady = false;
 var setupPromise = null;
@@ -170,14 +173,46 @@ async function cast(dev) {
     await stop();
     mpv.set("pause", true);
     note("casting", "casting to " + dev.name);
-    var r = await utils.exec(PY, [HELPER, "play", dev.id, url, String(pos), PIDFILE]);
+    var r = await utils.exec(PY, [HELPER, "play", dev.id, url, String(pos), PIDFILE, CREDFILE]);
     var err = parseLines(r.stdout).filter(function (e) { return e.event === "error"; })[0];
-    if (err) note("error", err.msg);
+    if (err && /not authenticated/i.test(err.msg)) {
+      mpv.set("pause", false);
+      note("error", "this TV needs pairing (one time)...");
+      return pairDevice(dev);
+    }
+    if (err) { mpv.set("pause", false); note("error", err.msg); }
     else if (r.status !== 0) note("error", tail(r.stderr) || "helper exited with " + r.status);
     else note("idle", "stopped");
   } catch (e) {
     note("error", e.message);
   }
+}
+
+async function pairDevice(dev) {
+  if (status === "pairing") return;
+  try {
+    await ensureVenv();
+    pairingDev = dev;
+    note("pairing", "look at the TV: enter the PIN it shows in the box below");
+    var r = await utils.exec(PY, [HELPER, "pair", dev.id, PINFILE, CREDFILE]);
+    var evs = parseLines(r.stdout);
+    var err = evs.filter(function (e) { return e.event === "error"; })[0];
+    if (err) note("error", err.msg);
+    else if (evs.some(function (e) { return e.event === "paired"; })) {
+      note("idle", "paired with " + dev.name + ". Now press Cast again.");
+    } else note("error", tail(r.stderr) || "pairing failed");
+  } catch (e) {
+    note("error", e.message);
+  } finally {
+    pairingDev = null;
+  }
+}
+
+function submitPin(pin) {
+  pin = String(pin || "").replace(/\D/g, "");
+  if (status !== "pairing" || !pin) return;
+  try { file.write(PINFILE, pin); note("pairing", "checking PIN..."); status = "pairing"; }
+  catch (e) { note("error", "cannot write PIN: " + e.message); }
 }
 
 async function stopCast() { await stop(); note("idle", "stopped"); }
@@ -196,6 +231,7 @@ function refreshMenu() {
     if (added[d.id]) return;
     added[d.id] = true;
     root.addSubMenuItem(menu.item("Cast to " + d.name, function () { cast(d); }));
+    root.addSubMenuItem(menu.item("Pair with " + d.name + " (PIN in sidebar)", function () { pairDevice(d); }));
   });
   try { if (menu.forceUpdate) menu.forceUpdate(); } catch (e) {}
 }
@@ -209,6 +245,7 @@ function loadSidebar() {
   });
   sidebar.onMessage("scan", function () { scan(); });
   sidebar.onMessage("stop", function () { stopCast(); });
+  sidebar.onMessage("pin", function (d) { submitPin(d && d.pin); });
   sidebar.onMessage("cast", function (d) {
     var dev = devices.filter(function (x) { return x.id === (d && d.id); })[0];
     if (dev) cast(dev);
