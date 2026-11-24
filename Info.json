@@ -1,0 +1,12 @@
+{
+  "name": "AirStream",
+  "identifier": "io.github.dg0606.iina-airstream",
+  "version": "0.1.0",
+  "author": { "name": "dg0606" },
+  "description": "Cast the current network stream (YouTube, HLS, http URL...) to an AirPlay device without downloading it: the device fetches the stream itself.",
+  "entry": "main.js",
+  "permissions": ["file-system", "show-osd"],
+  "ghRepo": "dg0606/iina-airstream",
+  "ghVersion": 1,
+  "preferenceDefaults": { "ytdlp": "/opt/homebrew/bin/yt-dlp" }
+}
