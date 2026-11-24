@@ -7,42 +7,61 @@
   html,body { margin:0; background:transparent; color:var(--ink); font:13px/1.45 -apple-system,sans-serif; }
   #w { padding:14px; }
   h1 { font-size:15px; margin:0 0 4px; }
-  p { color:var(--ink2); margin:0 0 12px; }
-  button { font:inherit; color:var(--ink); background:var(--btn); border:0; border-radius:8px; padding:8px 12px; cursor:pointer; width:100%; text-align:left; margin-bottom:6px; }
+  #title { color:var(--ink2); margin:0 0 12px; word-break:break-word; }
+  button { font:inherit; color:var(--ink); background:var(--btn); border:0; border-radius:8px; padding:10px 12px; cursor:pointer; width:100%; text-align:left; margin-bottom:6px; }
   button.go { background:var(--accent); color:#fff; }
-  button:hover { filter:brightness(1.1); }
+  button:disabled { opacity:.45; cursor:default; }
   #msg { margin-top:10px; color:var(--ink2); min-height:1.4em; }
+  video { position:absolute; width:1px; height:1px; opacity:.01; }
 </style>
+<video id="v" playsinline preload="metadata" x-webkit-airplay="allow"></video>
 <div id="w">
   <h1>AirStream</h1>
-  <p>Open a network stream (URL), then pick a device.</p>
-  <div id="devs"></div>
-  <button id="scan">Search devices</button>
-  <button id="stop">Stop casting</button>
-  <div id="pinbox" style="display:none">
-    <input id="pin" inputmode="numeric" maxlength="8" placeholder="PIN from the TV" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--btn);background:var(--btn);color:var(--ink);font:inherit;margin-bottom:6px">
-    <button id="pinok" class="go">Send PIN</button>
-  </div>
+  <div id="title"></div>
+  <button id="air" class="go" disabled>AirPlay — choose TV</button>
+  <button id="reload">Reload stream</button>
   <div id="msg">Waiting for the plugin…</div>
+  <div id="hint" style="color:var(--ink2);margin-top:8px"></div>
 </div>
 <script>
-  const $ = (id) => document.getElementById(id);
-  $("scan").onclick = () => iina.postMessage("scan", {});
-  const sendPin = () => { iina.postMessage("pin", { pin: $("pin").value }); $("pin").value = ""; };
-  $("pinok").onclick = sendPin;
-  $("pin").onkeydown = (e) => { if (e.key === "Enter") sendPin(); };
-  $("stop").onclick = () => iina.postMessage("stop", {});
+  const $ = (id) => document.getElementById(id), v = $("v");
+  let loaded = "", avail = false, onTV = false, st = null, err = "";
+
+  function ui() {
+    const ready = st && st.status !== "resolving" && st.url && loaded === st.url;
+    $("air").disabled = !ready || !v.webkitShowPlaybackTargetPicker;
+    $("air").textContent = onTV ? "AirPlay — change / stop (pick this Mac)" : "AirPlay — choose TV";
+    $("title").textContent = st ? st.title : "";
+    let m = err || (st ? st.msg : "");
+    if (st && ready && !avail && !onTV) m += " (no AirPlay devices detected yet)";
+    $("msg").textContent = m;
+    $("hint").textContent = onTV ? "Playing on TV: " + fmt(v.currentTime) + ". Pause/seek from the TV remote." : "";
+  }
+  const fmt = (t) => Math.floor(t / 60) + ":" + ("0" + Math.floor(t % 60)).slice(-2);
+
   iina.onMessage("state", (s) => {
-    $("devs").innerHTML = "";
-    s.devices.forEach((d) => {
-      const b = document.createElement("button");
-      b.className = "go"; b.textContent = "Cast to " + d.name;
-      b.onclick = () => iina.postMessage("cast", { id: d.id });
-      $("devs").appendChild(b);
-    });
-    $("pinbox").style.display = s.status === "pairing" ? "block" : "none";
-    $("msg").textContent = s.status === "casting" ? "Casting to " + s.msg : s.msg;
+    st = s;
+    if (s.url && s.url !== loaded) {
+      loaded = s.url; err = "";
+      const p = s.pos || 0;
+      v.src = s.url; v.load();
+      v.addEventListener("loadedmetadata", () => { if (p > 1) { try { v.currentTime = p; } catch (e) {} } }, { once: true });
+    }
+    ui();
   });
-  setInterval(() => iina.postMessage("getState", {}), 1000);
+  $("air").onclick = () => v.webkitShowPlaybackTargetPicker && v.webkitShowPlaybackTargetPicker();
+  $("reload").onclick = () => { loaded = ""; err = ""; iina.postMessage("reload", {}); };
+  v.addEventListener("webkitplaybacktargetavailabilitychanged", (e) => { avail = e.availability === "available"; ui(); });
+  v.addEventListener("webkitcurrentplaybacktargetiswirelesschanged", () => {
+    onTV = !!v.webkitCurrentPlaybackTargetIsWireless;
+    if (onTV) { v.muted = false; v.play().catch(() => {}); } else { v.pause(); }
+    iina.postMessage("tv", { onTV, t: v.currentTime });
+    ui();
+  });
+  v.addEventListener("error", () => {
+    err = "The stream could not be loaded (media error " + (v.error ? v.error.code : "?") + "). Try Reload.";
+    ui();
+  });
+  setInterval(() => { if (onTV) iina.postMessage("tv", { onTV: true, t: v.currentTime }); iina.postMessage("getState", {}); }, 1000);
   iina.postMessage("getState", {});
 </script>

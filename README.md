@@ -1,18 +1,17 @@
 # AirStream — IINA plugin
 
-Cast the **network stream** you're playing in IINA (YouTube, HLS, direct http URLs) to an AirPlay device **without downloading it first**. The device fetches the stream itself.
+Cast the **network stream** you're playing in IINA (YouTube, HLS, direct http URLs) to an AirPlay TV **without downloading it first**. macOS hands the URL to the TV through its own AirPlay stack (like Safari); the TV fetches the stream itself.
 
 ## Install
 IINA → Settings → Plugins → Install from GitHub → `dg0606/iina-airstream`
 
-First use creates a private Python venv and installs [pyatv](https://pyatv.dev) (needs `python3`). For page URLs (YouTube etc.) it needs `yt-dlp` (`brew install yt-dlp`; path configurable in the `ytdlp` preference, default `/opt/homebrew/bin/yt-dlp`).
+For page URLs (YouTube etc.) it needs `yt-dlp` (`brew install yt-dlp`; path configurable via the `ytdlp` preference) and, for YouTube, a JS runtime (`brew install deno` or `node`). No Python, no pairing step.
 
 ## Use
-Open a URL in IINA → menu **Plugins → AirStream** → *Search devices* → *Cast to …*. *Stop casting* ends it.
+Open a URL in IINA → sidebar tab **AirStream** → wait for "Ready" → **AirPlay — choose TV**. IINA pauses; the TV plays from the same second. When you disconnect (pick this Mac in the same picker) IINA seeks to where the TV got to.
 
 ## Limits
 - Network streams only (no local files).
-- No remote control from IINA; pause/seek on the receiving device.
-- YouTube: AirPlay takes one URL, so only the muxed 360p stream is available (YouTube no longer serves higher resolutions with audio in one file).
-- Pairing: if the TV answers "not authenticated", the plugin starts pairing automatically — type the PIN shown on the TV in the sidebar box. Done once per device (credentials saved in the plugin data folder).
-- Subtitles loaded in IINA are not sent to the TV (it fetches the stream itself).
+- Control playback (pause/seek) from the TV remote.
+- Subtitles loaded in IINA are not sent to the TV.
+- If the TV needs a code the first time, it shows it on screen (handled by macOS).
