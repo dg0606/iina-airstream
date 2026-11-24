@@ -78,7 +78,9 @@ async function pickPython() {
 
 async function pyatvOk() {
   if (!exists(PY)) return false;
-  try { return (await utils.exec(PY, ["-c", "import pyatv"])).status === 0; } catch (e) { return false; }
+  // srptools>=2 breaks pyatv 0.18 pairing (keyword-only arg), so require 1.x
+  var chk = "import pyatv,srptools;from importlib.metadata import version as v;import sys;sys.exit(0 if int(v('srptools').split('.')[0])<2 else 1)";
+  try { return (await utils.exec(PY, ["-c", chk])).status === 0; } catch (e) { return false; }
 }
 
 function ensureVenv() {
@@ -90,7 +92,7 @@ function ensureVenv() {
       if (!sys) throw new Error("Python 3.9+ not found. Install it: brew install python");
       var r = await utils.exec(sys, ["-m", "venv", "--clear", VENV]);
       if (r.status !== 0) throw new Error("venv failed: " + tail(r.stderr));
-      r = await utils.exec(PY, ["-m", "pip", "install", "--disable-pip-version-check", "-q", "pyatv"]);
+      r = await utils.exec(PY, ["-m", "pip", "install", "--disable-pip-version-check", "-q", "pyatv", "srptools<2"]);
       if (r.status !== 0) throw new Error("pip install failed: " + tail(r.stderr));
       if (!(await pyatvOk())) throw new Error("pyatv installed but cannot be imported");
       note("idle", "setup done");
