@@ -14,13 +14,14 @@
   #msg { margin-top:10px; color:var(--ink2); min-height:1.4em; }
   video { position:absolute; width:1px; height:1px; opacity:.01; }
 </style>
-<video id="v" playsinline preload="metadata" x-webkit-airplay="allow"></video>
+<video id="v" autoplay muted playsinline x-webkit-airplay="allow"></video>
 <div id="w">
   <h1>AirStream</h1>
   <div id="title"></div>
   <button id="air" class="go" disabled>AirPlay — choose TV</button>
   <button id="reload">Reload stream</button>
   <div id="msg">Waiting for the plugin…</div>
+  <div id="info" style="color:var(--ink2);margin-top:8px"></div>
   <div id="hint" style="color:var(--ink2);margin-top:8px"></div>
 </div>
 <script>
@@ -28,10 +29,11 @@
   let loaded = "", avail = false, onTV = false, st = null, err = "";
 
   function ui() {
-    const ready = st && st.status !== "resolving" && st.url && loaded === st.url;
+    const ready = st && st.status !== "resolving" && st.status !== "error" && st.url && loaded === st.url;
     $("air").disabled = !ready || !v.webkitShowPlaybackTargetPicker;
     $("air").textContent = onTV ? "AirPlay — change / stop (pick this Mac)" : "AirPlay — choose TV";
     $("title").textContent = st ? st.title : "";
+    $("info").textContent = st ? st.info : "";
     let m = err || (st ? st.msg : "");
     if (st && ready && !avail && !onTV) m += " (no AirPlay devices detected yet)";
     $("msg").textContent = m;
