@@ -1,4 +1,4 @@
-const { core, mpv, menu, utils, preferences, console, file } = iina;
+const { core, mpv, menu, utils, preferences, console, file, sidebar } = iina;
 
 const DIR = utils.resolvePath("@data/");
 const ROOT = utils.resolvePath("@plugin/");
@@ -10,8 +10,10 @@ const DIRECT = /\.(m3u8|mp4|mkv|webm|mov|mp3|flac)(\?|$)/i;
 
 let devices = [];
 let casting = false;
+let status = "idle", msg = "";
+const setStatus = (st, m) => { status = st; msg = m || ""; };
 
-const osd = (m) => core.osd("AirPlay: " + m);
+const osd = (m) => { msg = m; core.osd("AirStream: " + m); };
 const json = (s) => s.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
 
 async function resolveUrl(src) {
@@ -49,6 +51,7 @@ async function scan() {
 }
 
 async function stop() {
+  setStatus("idle", "");
   await utils.exec("/bin/sh", ["-c", `[ -f ${PIDFILE} ] && kill $(cat ${PIDFILE})`]);
   casting = false;
 }
@@ -63,7 +66,7 @@ async function cast(dev) {
     await stop();
     mpv.set("pause", true);
     osd("casting to " + dev.name);
-    casting = true;
+    casting = true; setStatus("casting", dev.name);
     const r = await utils.exec(PY, [HELPER, "play", dev.id, url, String(pos), PIDFILE]);
     const err = json(r.stdout).find((e) => e.event === "error");
     if (err) osd("error: " + err.msg);
@@ -71,7 +74,7 @@ async function cast(dev) {
   } catch (e) {
     osd("error: " + e.message);
   } finally {
-    casting = false;
+    casting = false; if (status === "casting") setStatus("idle", msg);
   }
 }
 
@@ -91,3 +94,19 @@ root.addSubMenuItem(menu.item("Stop casting", async () => { await stop(); osd("s
 root.addSubMenuItem(menu.separator());
 menu.addItem(root);
 scan();
+
+// Sidebar tab. The page polls "getState"; calls into sidebar happen only in
+// onMessage handlers / plugin load (main thread), never in exec callbacks.
+function loadSidebar() {
+  try { sidebar.loadFile("sidebar.html"); } catch (e) { return; }
+  sidebar.onMessage("getState", () =>
+    sidebar.postMessage("state", { devices, status, msg }));
+  sidebar.onMessage("scan", () => { scan(); });
+  sidebar.onMessage("stop", () => { stop().then(() => osd("stopped")); });
+  sidebar.onMessage("cast", (d) => {
+    const dev = devices.find((x) => x.id === d.id);
+    if (dev) cast(dev);
+  });
+}
+loadSidebar();
+iina.event.on("iina.window-loaded", loadSidebar);

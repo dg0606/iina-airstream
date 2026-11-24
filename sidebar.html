@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AirStream</title>
+<style>
+  :root { --ink:#1C1C1E; --ink2:rgba(0,0,0,.55); --btn:rgba(0,0,0,.07); --accent:#007AFF; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#F2F3F5; --ink2:rgba(255,255,255,.58); --btn:rgba(255,255,255,.1); --accent:#0A84FF; } }
+  html,body { margin:0; background:transparent; color:var(--ink); font:13px/1.45 -apple-system,sans-serif; }
+  #w { padding:14px; }
+  h1 { font-size:15px; margin:0 0 4px; }
+  p { color:var(--ink2); margin:0 0 12px; }
+  button { font:inherit; color:var(--ink); background:var(--btn); border:0; border-radius:8px; padding:8px 12px; cursor:pointer; width:100%; text-align:left; margin-bottom:6px; }
+  button.go { background:var(--accent); color:#fff; }
+  button:hover { filter:brightness(1.1); }
+  #msg { margin-top:10px; color:var(--ink2); min-height:1.4em; }
+</style>
+<div id="w">
+  <h1>AirStream</h1>
+  <p>Open a network stream (URL), then pick a device.</p>
+  <div id="devs"></div>
+  <button id="scan">Search devices</button>
+  <button id="stop">Stop casting</button>
+  <div id="msg"></div>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  $("scan").onclick = () => iina.postMessage("scan", {});
+  $("stop").onclick = () => iina.postMessage("stop", {});
+  iina.onMessage("state", (s) => {
+    $("devs").innerHTML = "";
+    s.devices.forEach((d) => {
+      const b = document.createElement("button");
+      b.className = "go"; b.textContent = "Cast to " + d.name;
+      b.onclick = () => iina.postMessage("cast", { id: d.id });
+      $("devs").appendChild(b);
+    });
+    $("msg").textContent = s.status === "casting" ? "Casting to " + s.msg : s.msg;
+  });
+  setInterval(() => iina.postMessage("getState", {}), 1000);
+  iina.postMessage("getState", {});
+</script>
